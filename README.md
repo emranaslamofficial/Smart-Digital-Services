@@ -92,6 +92,22 @@ server {
 }
 ```
 
+## 5. Quick test deployment on Vercel (temporary data)
+
+Vercel is serverless: only `/tmp` is writable and it is wiped whenever Vercel restarts the function. On Vercel the database and uploads live in `/tmp`, so **all data (admin account, posts, forms, uploads) resets from time to time**. Use Vercel for testing only; use cPanel/VPS for the live site.
+
+1. In Vercel: **Add New → Project → Import** the GitHub repo. Leave Framework Preset as **Other**. No build settings needed (`vercel.json` handles routing).
+2. Under **Environment Variables** add:
+   - `ADMIN_EMAIL` and `ADMIN_PASSWORD` (10+ characters). These are **required** on Vercel, because the first-run setup page cannot be used there.
+   - `DATA_ENCRYPTION_KEY` (64 hex characters, see above)
+   - `BASE_URL` = your Vercel URL, e.g. `https://smart-digital-services.vercel.app`
+   - `NODE_ENV` = `production`
+3. Deploy. The admin dashboard shows a "Vercel test mode" warning as a reminder that data is temporary.
+
+Limits on Vercel: requests over ~4.5 MB are rejected (large document uploads), and if Vercel runs more than one instance at once, each has its own temporary database, so you may occasionally be logged out.
+
+`api/index.js`, `vercel.json` and `public/` exist only for Vercel; cPanel and VPS ignore them.
+
 ## Project structure
 
 | Path | Purpose |

@@ -35,8 +35,10 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const IS_PROD = process.env.NODE_ENV === 'production';
 const ROOT = __dirname;
-const DATA_DIR = path.resolve(ROOT, process.env.DATA_DIR || 'data');
-const UPLOAD_DIR = path.resolve(ROOT, process.env.UPLOAD_DIR || 'uploads');
+// On Vercel (serverless) only /tmp is writable and it is temporary — fine for testing, not for production.
+const ON_VERCEL = !!process.env.VERCEL;
+const DATA_DIR = path.resolve(ROOT, process.env.DATA_DIR || (ON_VERCEL ? '/tmp/sds/data' : 'data'));
+const UPLOAD_DIR = path.resolve(ROOT, process.env.UPLOAD_DIR || (ON_VERCEL ? '/tmp/sds/uploads' : 'uploads'));
 const DIRS = {
   images: path.join(UPLOAD_DIR, 'images'),       // public: site images, blog, products, team
   documents: path.join(UPLOAD_DIR, 'documents'), // public: admin-uploaded PDF documents
@@ -770,7 +772,7 @@ app.disable('x-powered-by');
 if (process.env.TRUST_PROXY && process.env.TRUST_PROXY !== '0') {
   const tp = process.env.TRUST_PROXY;
   app.set('trust proxy', /^\d+$/.test(tp) ? parseInt(tp, 10) : tp === 'true' ? true : tp);
-}
+} else if (ON_VERCEL) app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: {
     useDefaults: true,
@@ -2846,6 +2848,7 @@ adminApi.get('/dashboard', (req, res) => {
       scheme: isAdmin ? q.all('SELECT id, ref, full_name AS name, city, status, created_at FROM scheme_submissions ORDER BY id DESC LIMIT 5') : [],
     },
     smtp: !!(S().smtp.enabled && S().smtp.host),
+    vercel: ON_VERCEL,
   });
 });
 
@@ -3694,6 +3697,7 @@ function adminClient() {
     const max = Math.max(1, ...d.chart.map((x) => x.n));
     const recent = (title, rows, href, fn) => `<div class="panel"><div class="panel-head"><h3>${h(title)}</h3><a href="${href}" class="link">View all</a></div>${rows.length ? `<ul class="mini-list">${rows.map(fn).join('')}</ul>` : '<p class="no pad">Nothing yet.</p>'}</div>`;
     view.innerHTML = `<div class="page-head"><div><h1>Welcome back, ${h(META.admin.name.split(' ')[0])}</h1><p class="muted">Here is what is happening on ${h(META.siteName)}.</p></div><div class="actions"><a class="btn btn-primary" href="#/r/posts/new">${ic('plus')} New blog post</a><a class="btn btn-outline" href="#/certificates/generate">${ic('award')} Generate certificates</a></div></div>
+      ${d.vercel ? `<div class="alert alert-warn">${ic('activity')}<div><strong>Vercel test mode:</strong> data and uploads are stored temporarily and will be reset when Vercel restarts the server. Use cPanel or another host with permanent storage for the live website.</div></div>` : ''}
       ${!d.smtp ? `<div class="alert alert-info">${ic('mail')}<div>Email notifications are off. Everything still works and is saved in the dashboard — configure SMTP in <a href="#/settings/smtp">Email settings</a> to receive alerts.</div></div>` : ''}
       ${s.comments_pending ? `<div class="alert alert-warn">${ic('chat')}<div>${s.comments_pending} blog comment(s) awaiting moderation. <a href="#/r/comments?status=pending">Review now</a></div></div>` : ''}
       <div class="stats">${cards.map(([icn, label, n, sub, href]) => `<a class="stat" href="${href}"><span class="stat-ic">${ic(icn)}</span><span class="stat-n">${n}</span><span class="stat-l">${h(label)}</span><span class="stat-s">${h(sub)}</span></a>`).join('')}</div>
