@@ -26,7 +26,9 @@ const crypto = require('node:crypto');
 const express = require('express');
 const helmet = require('helmet');
 const multer = require('multer');
-const sanitizeHtmlLib = require('sanitize-html');
+// sanitize-html is pre-bundled into one CommonJS file (npm run vendor) because its parser, htmlparser2,
+// is ESM-only and some hosts (e.g. Vercel) cannot require() ES modules.
+const sanitizeHtmlLib = require('./vendor/sanitize-html.cjs');
 const nodemailer = require('nodemailer');
 const { DatabaseSync } = require('node:sqlite');
 

@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "vendor": "esbuild node_modules/sanitize-html/index.js --bundle --platform=node --format=cjs --target=node22 --minify --legal-comments=eof --outfile=vendor/sanitize-html.cjs"
   },
   "engines": {
     "node": ">=22.13.0"
@@ -16,7 +17,10 @@
     "express": "^5.1.0",
     "helmet": "^8.1.0",
     "multer": "^2.0.2",
-    "nodemailer": "^10.6.1",
-    "sanitize-html": "^2.17.0"
+    "nodemailer": "^10.6.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "sanitize-html": "2.18.2"
   }
 }
