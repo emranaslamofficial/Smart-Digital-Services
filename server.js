@@ -2723,15 +2723,25 @@ const loginEmailLimiter = rateLimit({ name: 'login-email', windowMs: 15 * 60 * 1
 
 const adminCount = () => q.val('SELECT COUNT(*) FROM admin_users');
 let SETUP_TOKEN = null;
+// Values pasted into hosting dashboards often carry stray spaces or quotes — strip them.
+const envClean = (v) => String(v || '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+function envAdminStatus() {
+  const email = envClean(process.env.ADMIN_EMAIL), pass = envClean(process.env.ADMIN_PASSWORD);
+  return {
+    email, pass,
+    emailState: !email ? 'missing' : V.email(email) ? 'ok' : 'invalid',
+    passState: !pass ? 'missing' : pass.length >= 10 ? 'ok' : 'too_short',
+  };
+}
 function bootstrapAdmin() {
   if (adminCount()) return;
-  const email = (process.env.ADMIN_EMAIL || '').trim(), pass = process.env.ADMIN_PASSWORD || '';
-  if (email && V.email(email) && pass.length >= 10) {
+  const { email, pass, emailState, passState } = envAdminStatus();
+  if (emailState === 'ok' && passState === 'ok') {
     q.run('INSERT INTO admin_users (name, email, password_hash, role, active, created_at) VALUES (?,?,?,?,1,?)', process.env.ADMIN_NAME || 'Administrator', email.toLowerCase(), hashPassword(pass), 'admin', nowIso());
     console.log(`[setup] Initial admin account created for ${email}. Remove ADMIN_PASSWORD from .env now if you like — it is not needed again.`);
     return;
   }
-  if (email && pass.length < 10) console.warn('[setup] ADMIN_PASSWORD must be at least 10 characters — falling back to first-run setup.');
+  if (emailState !== 'missing' || passState !== 'missing') console.warn(`[setup] ADMIN_EMAIL is ${emailState}, ADMIN_PASSWORD is ${passState} — falling back to first-run setup.`);
   SETUP_TOKEN = randomToken(12);
   fs.writeFileSync(path.join(DATA_DIR, 'setup-token.txt'), SETUP_TOKEN + '\n', { mode: 0o600 });
   console.log('\n================ FIRST-RUN SETUP ================');
@@ -3172,7 +3182,13 @@ app.get('/admin/login', (req, res) => {
 app.get('/admin/setup', (req, res) => {
   res.set('Cache-Control', 'no-store');
   if (adminCount()) return res.redirect('/admin/login');
-  res.send(adminShell(req, { title: 'First-run setup', bodyClass: 'auth-page', body: authCard(`<h1>Create the first admin</h1><p class="muted">Enter the one-time setup token shown in the server console (also saved in <code>data/setup-token.txt</code>).</p>
+  const st = envAdminStatus();
+  const label = { ok: 'OK', missing: 'not set', invalid: 'not a valid email', too_short: 'too short (min. 10 characters)' };
+  const envBox = ON_VERCEL || st.emailState !== 'missing' || st.passState !== 'missing'
+    ? `<div class="alert alert-warn" style="margin-top:16px"><div><strong>${ON_VERCEL ? 'On Vercel, create the admin with environment variables' : 'Admin environment variables'}</strong><br>
+       <code>ADMIN_EMAIL</code>: ${label[st.emailState]}<br><code>ADMIN_PASSWORD</code>: ${label[st.passState]}<br>
+       ${ON_VERCEL ? 'Add both in Vercel → Settings → Environment Variables (Production ticked), then Deployments → ⋯ → Redeploy. This page then turns into the normal login page.' : 'Fix them in <code>.env</code> and restart, or use the setup token below.'}</div></div>` : '';
+  res.send(adminShell(req, { title: 'First-run setup', bodyClass: 'auth-page', body: authCard(`<h1>Create the first admin</h1>${envBox}<p class="muted">Enter the one-time setup token shown in the server console (also saved in <code>data/setup-token.txt</code>).</p>
     <form id="setupForm" class="stack" novalidate><div class="form-status"></div>
     <label class="fld"><span>Setup token</span><input type="text" name="token" required autocomplete="off" maxlength="64"></label>
     <label class="fld"><span>Your name</span><input type="text" name="name" required maxlength="100"></label>
