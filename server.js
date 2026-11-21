@@ -2722,6 +2722,10 @@ const loginLimiter = rateLimit({ name: 'login', windowMs: 15 * 60 * 1000, max: 8
 const loginEmailLimiter = rateLimit({ name: 'login-email', windowMs: 15 * 60 * 1000, max: 5, keyFn: (req) => String(req.body?.email || '').toLowerCase().slice(0, 190) });
 
 const adminCount = () => q.val('SELECT COUNT(*) FROM admin_users');
+// TEMPORARY TESTING SHORTCUT: on Vercel the first-run setup page does not ask for a setup token, because Vercel
+// restarts often and prints a new token each time. Whoever opens /admin/setup first on a fresh instance becomes admin.
+// cPanel/VPS (not Vercel) still require the token. Set SETUP_TOKEN_REQUIRED=1 to force the token on Vercel too.
+const SETUP_TOKEN_REQUIRED = !ON_VERCEL || process.env.SETUP_TOKEN_REQUIRED === '1';
 let SETUP_TOKEN = null;
 // Values pasted into hosting dashboards often carry stray spaces or quotes — strip them.
 const envClean = (v) => String(v || '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
@@ -2754,7 +2758,7 @@ adminApi.use(csrfCheck);
 adminApi.post('/setup', loginLimiter, (req, res) => {
   if (adminCount() || !SETUP_TOKEN) throw new HttpError(403, 'Setup has already been completed.');
   const b = req.body || {};
-  if (!safeEqual(String(b.token || '').trim(), SETUP_TOKEN)) throw new HttpError(403, 'Invalid setup token.', { token: 'The setup token is not correct.' });
+  if (SETUP_TOKEN_REQUIRED && !safeEqual(String(b.token || '').trim(), SETUP_TOKEN)) throw new HttpError(403, 'Invalid setup token.', { token: 'The setup token is not correct.' });
   requireFields(b, { name: 'Name', email: 'Email', password: 'Password' });
   if (!V.email(b.email)) throw new HttpError(422, 'Invalid email.', { email: 'Enter a valid email.' });
   if (String(b.password).length < 10) throw new HttpError(422, 'Password too short.', { password: 'Use at least 10 characters.' });
@@ -3184,13 +3188,14 @@ app.get('/admin/setup', (req, res) => {
   if (adminCount()) return res.redirect('/admin/login');
   const st = envAdminStatus();
   const label = { ok: 'OK', missing: 'not set', invalid: 'not a valid email', too_short: 'too short (min. 10 characters)' };
-  const envBox = ON_VERCEL || st.emailState !== 'missing' || st.passState !== 'missing'
-    ? `<div class="alert alert-warn" style="margin-top:16px"><div><strong>${ON_VERCEL ? 'On Vercel, create the admin with environment variables' : 'Admin environment variables'}</strong><br>
-       <code>ADMIN_EMAIL</code>: ${label[st.emailState]}<br><code>ADMIN_PASSWORD</code>: ${label[st.passState]}<br>
-       ${ON_VERCEL ? 'Add both in Vercel → Settings → Environment Variables (Production ticked), then Deployments → ⋯ → Redeploy. This page then turns into the normal login page.' : 'Fix them in <code>.env</code> and restart, or use the setup token below.'}</div></div>` : '';
-  res.send(adminShell(req, { title: 'First-run setup', bodyClass: 'auth-page', body: authCard(`<h1>Create the first admin</h1>${envBox}<p class="muted">Enter the one-time setup token shown in the server console (also saved in <code>data/setup-token.txt</code>).</p>
+  const envBox = !SETUP_TOKEN_REQUIRED
+    ? `<div class="alert alert-warn" style="margin-top:16px"><div><strong>Vercel test mode:</strong> no setup token needed. Test data resets when Vercel restarts, so you may need to create the admin again. Do not use this mode for the live website.</div></div>`
+    : st.emailState !== 'missing' || st.passState !== 'missing'
+      ? `<div class="alert alert-warn" style="margin-top:16px"><div><strong>Admin environment variables</strong><br>
+       <code>ADMIN_EMAIL</code>: ${label[st.emailState]}<br><code>ADMIN_PASSWORD</code>: ${label[st.passState]}<br>Fix them in <code>.env</code> and restart, or use the setup token below.</div></div>` : '';
+  res.send(adminShell(req, { title: 'First-run setup', bodyClass: 'auth-page', body: authCard(`<h1>Create the first admin</h1>${envBox}${SETUP_TOKEN_REQUIRED ? '<p class="muted">Enter the one-time setup token shown in the server console (also saved in <code>data/setup-token.txt</code>).</p>' : '<p class="muted">Choose your admin name, email and password.</p>'}
     <form id="setupForm" class="stack" novalidate><div class="form-status"></div>
-    <label class="fld"><span>Setup token</span><input type="text" name="token" required autocomplete="off" maxlength="64"></label>
+    ${SETUP_TOKEN_REQUIRED ? '<label class="fld"><span>Setup token</span><input type="text" name="token" required autocomplete="off" maxlength="64"></label>' : ''}
     <label class="fld"><span>Your name</span><input type="text" name="name" required maxlength="100"></label>
     <label class="fld"><span>Email (login)</span><input type="email" name="email" required autocomplete="username" maxlength="190"></label>
     <label class="fld"><span>Password (min. 10 characters)</span><input type="password" name="password" required minlength="10" autocomplete="new-password"></label>
